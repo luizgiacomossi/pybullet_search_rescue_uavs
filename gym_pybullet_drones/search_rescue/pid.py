@@ -9,6 +9,7 @@ from gym_pybullet_drones.envs.CtrlAviary import CtrlAviary
 from gym_pybullet_drones.control.DSLPIDControl import DSLPIDControl
 from gym_pybullet_drones.utils.Logger import Logger
 from gym_pybullet_drones.utils.utils import sync, str2bool
+from utils import drawVectorVelocity
 
 class DroneSimulation:
     def __init__(self, **kwargs):
@@ -28,9 +29,9 @@ class DroneSimulation:
         self.env = None
         self.logger = None
         self.controllers = []
-        self.action = np.zeros((self.num_drones, 4))
+        self.action = np.zeros((self.num_drones + 1, 4))  # Extra drone for manual control
+        self.manual_drone_index = self.num_drones   # Index of the manual drone
         self.init_positions()
-        self.init_trajectory2() # or init_trajectory2
 
     def init_positions(self):
         H = 0.5
@@ -41,40 +42,15 @@ class DroneSimulation:
             for i in range(self.num_drones)
         ])
         self.init_rpys = np.array([[0, 0, i * (np.pi / 2) / self.num_drones] for i in range(self.num_drones)])
-
-    def init_trajectory2(self):
-            PERIOD = 14
-            NUM_WP = self.control_freq_hz * PERIOD
-            self.target_pos = np.zeros((NUM_WP, 3))
-            RADIUS = 1
-            
-            # Alternative trajectory (figure-eight pattern)
-            for i in range(NUM_WP):
-                theta = (i / NUM_WP) * (2 * np.pi)
-                x = RADIUS * np.sin(2 * theta)
-                y = RADIUS * np.sin(theta)
-                self.target_pos[i, :] = [x, y, 0]
-            
-            self.wp_counters = np.array([int((i * NUM_WP / 6) % NUM_WP) for i in range(self.num_drones)])
-        
-    def init_trajectory(self):
-        PERIOD = 10
-        NUM_WP = self.control_freq_hz * PERIOD
-        self.target_pos = np.zeros((NUM_WP, 3))
-        for i in range(NUM_WP):
-            self.target_pos[i, :] = (
-                self.init_xyzs[0, 0] + 0.3 * np.cos((i / NUM_WP) * (2 * np.pi) + np.pi / 2),
-                self.init_xyzs[0, 1] + 0.3 * np.sin((i / NUM_WP) * (2 * np.pi) + np.pi / 2) - 0.3,
-                self.init_xyzs[0, 2],  # Use the initial height of the first drone
-            )
-        self.wp_counters = np.array([int((i * NUM_WP / 6) % NUM_WP) for i in range(self.num_drones)])
+        self.drone_manual_position = np.array([1, 1, 0.5])
+        self.init_xyzs = np.vstack((self.init_xyzs, self.drone_manual_position))
 
     def setup_environment(self):
         self.env = CtrlAviary(
             drone_model=self.drone_model,
-            num_drones=self.num_drones,
+            num_drones=self.num_drones + 1,
             initial_xyzs=self.init_xyzs,
-            initial_rpys=self.init_rpys,
+            initial_rpys=np.vstack((self.init_rpys, [0, 0, 0])),
             physics=self.physics,
             neighbourhood_radius=10,
             pyb_freq=self.simulation_freq_hz,
@@ -86,84 +62,83 @@ class DroneSimulation:
         )
         self.logger = Logger(
             logging_freq_hz=self.control_freq_hz,
-            num_drones=self.num_drones,
+            num_drones=self.num_drones + 1,
             output_folder=self.output_folder,
             colab=self.colab,
         )
         self.controllers = [DSLPIDControl(drone_model=self.drone_model) for _ in range(self.num_drones)]
+        self.manual_controller = DSLPIDControl(drone_model=self.drone_model)
 
     def run_simulation(self):
-        self.setup_environment()
-        start_time = time.time()
-        
-        for i in range(0, int(self.duration_sec * self.env.CTRL_FREQ)):
+        """
+        Runs the drone simulation for a specified duration, updating the environment and drone controls at each step.
+        """
+
+        self.setup_environment()  # Initialize the simulation environment
+
+        start_time = time.time()  # Record the simulation start time
+
+        # Calculate the total number of simulation steps based on duration and control frequency
+        num_steps = int(self.duration_sec * self.env.CTRL_FREQ)
+
+        for step_num in range(num_steps):  # Iterate through each simulation step
+            # Execute a step in the environment, applying the current action
             obs, _, _, _, _ = self.env.step(self.action)
+
+            # Update drone controls based on the current observation from the environment
             self.update_controls(obs)
-            self.log_data(obs, i)
-            if self.gui: # simulation loop
-                self.process_input()
-                sync(i, start_time, self.env.CTRL_TIMESTEP)
+
+            # Visualize the velocity vector for the manual drone
+            drawVectorVelocity(self.num_drones, obs[self.num_drones], p) 
+
+            # Process any user input or other event handling
+            self.process_input()
+
+            # Synchronize the simulation with real-time (maintain desired control frequency)
+            sync(step_num, start_time, self.env.CTRL_TIMESTEP)
+
+        # Clean up the environment after the simulation is complete
         self.env.close()
+
+        # Generate and display plots if requested
         if self.plot:
-            self.logger.plot()
+            self.logger.plot()  # Generate plots using the logger object
 
     def update_controls(self, obs):
         for j in range(self.num_drones):
             self.action[j, :], _, _ = self.controllers[j].computeControlFromState(
                 control_timestep=self.env.CTRL_TIMESTEP,
                 state=obs[j],
-                target_pos=np.hstack([self.target_pos[self.wp_counters[j], 0:2], self.init_xyzs[j, 2]]),
+                target_pos=self.init_xyzs[j],
                 target_rpy=self.init_rpys[j, :],
             )
-            self.wp_counters[j] = (self.wp_counters[j] + 1) % len(self.target_pos)
+        self.action[self.manual_drone_index, :] = self.manual_controller.computeControlFromState(
+            control_timestep=self.env.CTRL_TIMESTEP,
+            state=obs[self.manual_drone_index],
+            target_pos=self.drone_manual_position,
+            target_rpy=[0, 0, 0],
+        )[0]
 
     def process_input(self):
-        # Get mouse click position (returns x, y screen coordinates)
-        mouse_events = p.getMouseEvents()
         key_events = p.getKeyboardEvents()
-
-
-        for event in mouse_events:
-            event_type, mouse_x, mouse_y, button_index, button_state = event
-
-            if event_type == 2 and button_index == 0 and button_state == 3:  # Left click
-                print(f"Left click position (screen) -> : ({mouse_x}, {mouse_y})")
-                # Add logic for left click action
-
-            if event_type == 2 and button_index == 2 and button_state == 3:  # Right click
-                print(f"Right click position (screen) -> : ({mouse_x}, {mouse_y})")
-                # Add logic for right click action
-
-        # Process keyboard input
-        for key, state in key_events.items():
-            if state & p.KEY_WAS_TRIGGERED:
-                if key == p.B3G_LEFT_ARROW:
-                    print("Left Arrow Pressed")
-                    # Add logic for left arrow action
-                elif key == p.B3G_RIGHT_ARROW:
-                    print("Right Arrow Pressed")
-                    # Add logic for right arrow action
-                elif key == p.B3G_UP_ARROW:
-                    print("Up Arrow Pressed")
-                    # Add logic for up arrow action
-                elif key == p.B3G_DOWN_ARROW:
-                    print("Down Arrow Pressed")
-                    # Add logic for down arrow action
-
-
-    def log_data(self, obs, step):
-        for j in range(self.num_drones):
-            self.logger.log(
-                drone=j,
-                timestamp=step / self.env.CTRL_FREQ,
-                state=obs[j],
-                control=np.hstack([self.target_pos[self.wp_counters[j], 0:2], self.init_xyzs[j, 2], self.init_rpys[j, :], np.zeros(6)]),
-            )
+        step_size = 0.05
+        if p.B3G_LEFT_ARROW in key_events:
+            self.drone_manual_position[0] -= step_size
+        if p.B3G_RIGHT_ARROW in key_events:
+            self.drone_manual_position[0] += step_size
+        if p.B3G_UP_ARROW in key_events:
+            self.drone_manual_position[1] += step_size
+        if p.B3G_DOWN_ARROW in key_events:
+            self.drone_manual_position[1] -= step_size
+        if ord('u') in key_events:
+            self.drone_manual_position[2] += step_size
+        if ord('d') in key_events:
+            self.drone_manual_position[2] -= step_size
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Control Drone using PID and arrow keys")
     parser.add_argument("--drone", default=DroneModel("cf2x"), type=DroneModel, choices=DroneModel)
-    parser.add_argument("--num_drones", default=4, type=int)
+    parser.add_argument("--num_drones", default=5, type=int)
     parser.add_argument("--physics", default=Physics("pyb_gnd_drag_dw"), type=Physics, choices=Physics)
     parser.add_argument("--gui", default=True, type=str2bool)
     parser.add_argument("--record_video", default=False, type=str2bool)
@@ -176,6 +151,6 @@ if __name__ == "__main__":
     parser.add_argument("--output_folder", default="results", type=str)
     parser.add_argument("--colab", default=False, type=bool)
     args = parser.parse_args()
-
+    
     sim = DroneSimulation(**vars(args))
     sim.run_simulation()

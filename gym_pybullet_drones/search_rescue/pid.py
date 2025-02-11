@@ -19,7 +19,7 @@ class DroneSimulation:
         self.record_video = kwargs.get("record_video", False)
         self.plot = kwargs.get("plot", False)
         self.user_debug_gui = kwargs.get("user_debug_gui", False)
-        self.obstacles = kwargs.get("obstacles", True)
+        self.obstacles = kwargs.get("obstacles", False)
         self.simulation_freq_hz = kwargs.get("simulation_freq_hz", 240)
         self.control_freq_hz = kwargs.get("control_freq_hz", 48)
         self.duration_sec = kwargs.get("duration_sec", 9999999)
@@ -95,11 +95,13 @@ class DroneSimulation:
     def run_simulation(self):
         self.setup_environment()
         start_time = time.time()
+        
         for i in range(0, int(self.duration_sec * self.env.CTRL_FREQ)):
             obs, _, _, _, _ = self.env.step(self.action)
             self.update_controls(obs)
             self.log_data(obs, i)
-            if self.gui:
+            if self.gui: # simulation loop
+                self.process_input()
                 sync(i, start_time, self.env.CTRL_TIMESTEP)
         self.env.close()
         if self.plot:
@@ -115,6 +117,40 @@ class DroneSimulation:
             )
             self.wp_counters[j] = (self.wp_counters[j] + 1) % len(self.target_pos)
 
+    def process_input(self):
+        # Get mouse click position (returns x, y screen coordinates)
+        mouse_events = p.getMouseEvents()
+        key_events = p.getKeyboardEvents()
+
+
+        for event in mouse_events:
+            event_type, mouse_x, mouse_y, button_index, button_state = event
+
+            if event_type == 2 and button_index == 0 and button_state == 3:  # Left click
+                print(f"Left click position (screen) -> : ({mouse_x}, {mouse_y})")
+                # Add logic for left click action
+
+            if event_type == 2 and button_index == 2 and button_state == 3:  # Right click
+                print(f"Right click position (screen) -> : ({mouse_x}, {mouse_y})")
+                # Add logic for right click action
+
+        # Process keyboard input
+        for key, state in key_events.items():
+            if state & p.KEY_WAS_TRIGGERED:
+                if key == p.B3G_LEFT_ARROW:
+                    print("Left Arrow Pressed")
+                    # Add logic for left arrow action
+                elif key == p.B3G_RIGHT_ARROW:
+                    print("Right Arrow Pressed")
+                    # Add logic for right arrow action
+                elif key == p.B3G_UP_ARROW:
+                    print("Up Arrow Pressed")
+                    # Add logic for up arrow action
+                elif key == p.B3G_DOWN_ARROW:
+                    print("Down Arrow Pressed")
+                    # Add logic for down arrow action
+
+
     def log_data(self, obs, step):
         for j in range(self.num_drones):
             self.logger.log(
@@ -125,7 +161,7 @@ class DroneSimulation:
             )
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Helix flight simulation using CtrlAviary and DSLPIDControl")
+    parser = argparse.ArgumentParser(description="Control Drone using PID and arrow keys")
     parser.add_argument("--drone", default=DroneModel("cf2x"), type=DroneModel, choices=DroneModel)
     parser.add_argument("--num_drones", default=4, type=int)
     parser.add_argument("--physics", default=Physics("pyb_gnd_drag_dw"), type=Physics, choices=Physics)

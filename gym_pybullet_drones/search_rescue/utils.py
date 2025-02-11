@@ -31,8 +31,8 @@ def drawVectorVelocity(drone, obs, pBullet):
     p1 = pos
     vel = getLinearVelocity(obs)
 
-    p2 = p1 + vel*0.5
-    pBullet.addUserDebugLine(p1, p2, lineColorRGB=[0, 0, 1], lineWidth=2.0, lifeTime=0.3)
+    p2 = p1 + vel * 0.3
+    pBullet.addUserDebugLine(p1, p2, lineColorRGB=[0, 0, 1], lineWidth=2.0, lifeTime=0.1)
 
 def drawSquare(pBullet, translation = [0,0,0] , color = [1,0,0], z_offset = 0.1):
 

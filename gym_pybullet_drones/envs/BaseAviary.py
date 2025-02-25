@@ -489,12 +489,17 @@ class BaseAviary(gym.Env):
                                               flags = p.URDF_USE_INERTIA_FROM_FILE,
                                               physicsClientId=self.CLIENT
                                               ) for i in range(self.NUM_DRONES)])
+        # sets a random color for each drone
+        #for i in range(self.NUM_DRONES):
+        #    p.changeVisualShape(self.DRONE_IDS[i], -1, rgbaColor=[np.random.rand(), np.random.rand(), np.random.rand(), 1], physicsClientId=self.CLIENT)
+
         #### Remove default damping #################################
         # for i in range(self.NUM_DRONES):
         #     p.changeDynamics(self.DRONE_IDS[i], -1, linearDamping=0, angularDamping=0)
         #### Show the frame of reference of the drone, note that ###
         #### It severly slows down the GUI #########################
-        if self.GUI and self.USER_DEBUG:
+        SHOW_AXES = False
+        if self.GUI and SHOW_AXES:
             for i in range(self.NUM_DRONES):
                 self._showDroneLocalAxes(i)
         #### Disable collisions between drones' and the ground plane
@@ -966,16 +971,16 @@ class BaseAviary(gym.Env):
                    p.getQuaternionFromEuler([0, 0, 0]),
                    physicsClientId=self.CLIENT
                    )
-        p.loadURDF("cube_no_rotation.urdf",
-                   [-.5, -2.5, .5],
-                   p.getQuaternionFromEuler([0, 0, 0]),
-                   physicsClientId=self.CLIENT
-                   )
-        p.loadURDF("sphere2.urdf",
-                   [0, 2, .5],
-                   p.getQuaternionFromEuler([0,0,0]),
-                   physicsClientId=self.CLIENT
-                   )
+        #p.loadURDF("cube_no_rotation.urdf",
+                   #[-.5, -2.5, .5],
+                   #p.getQuaternionFromEuler([0, 0, 0]),
+                   #physicsClientId=self.CLIENT
+                   #)
+       # p.loadURDF("sphere2.urdf",
+                   #[0, 2, .5],
+                   #p.getQuaternionFromEuler([0,0,0]),
+                   #physicsClientId=self.CLIENT
+                   #)
     
     ################################################################################
     

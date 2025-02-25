@@ -80,20 +80,20 @@ class DSLPIDControl(BaseControl):
     ################################################################################
     
     def computeControl(self,
-                       control_timestep,
-                       cur_pos,
-                       cur_quat,
-                       cur_vel,
-                       cur_ang_vel,
-                       target_pos,
-                       target_rpy=np.zeros(3),
-                       target_vel=np.zeros(3),
-                       target_rpy_rates=np.zeros(3)
-                       ):
+                    control_timestep,
+                    cur_pos,
+                    cur_quat,
+                    cur_vel,
+                    cur_ang_vel,
+                    target_pos,
+                    target_rpy=np.zeros(3),
+                    target_vel=np.zeros(3),
+                    target_rpy_rates=np.zeros(3)
+                    ):
         """Computes the PID control action (as RPMs) for a single drone.
 
-        This methods sequentially calls `_dslPIDPositionControl()` and `_dslPIDAttitudeControl()`.
-        Parameter `cur_ang_vel` is unused.
+        This method sequentially calls `_dslPIDPositionControl()` and `_dslPIDAttitudeControl()`.
+        The `cur_ang_vel` parameter is currently unused.
 
         Parameters
         ----------
@@ -126,23 +126,45 @@ class DSLPIDControl(BaseControl):
             The current yaw error.
 
         """
+        # max angle for roll and pitch
+        MAX_ANGLE = math.pi/6
+
+        # Increment control counter, tracking how many control steps have been executed
         self.control_counter += 1
+
+        # saturates target roll and pitch angles
+        target_rpy[0] = np.clip(target_rpy[0], -MAX_ANGLE, MAX_ANGLE)
+        target_rpy[1] = np.clip(target_rpy[1], -MAX_ANGLE, MAX_ANGLE)
+        
+        # Call the position control function to compute the thrust, desired roll-pitch-yaw (RPY), and position error
         thrust, computed_target_rpy, pos_e = self._dslPIDPositionControl(control_timestep,
-                                                                         cur_pos,
-                                                                         cur_quat,
-                                                                         cur_vel,
-                                                                         target_pos,
-                                                                         target_rpy,
-                                                                         target_vel
-                                                                         )
+                                                                        cur_pos,
+                                                                        cur_quat,
+                                                                        cur_vel,
+                                                                        target_pos,
+                                                                        target_rpy,
+                                                                        target_vel
+                                                                        )
+        
+        # saturates target roll and pitch angles
+        computed_target_rpy[0] = np.clip(computed_target_rpy[0], -MAX_ANGLE, MAX_ANGLE)
+        computed_target_rpy[1] = np.clip(computed_target_rpy[1], -MAX_ANGLE, MAX_ANGLE)
+
+
+        # Use the result from position control (thrust and computed target RPY) to compute the attitude control (RPMs)
         rpm = self._dslPIDAttitudeControl(control_timestep,
-                                          thrust,
-                                          cur_quat,
-                                          computed_target_rpy,
-                                          target_rpy_rates
-                                          )
+                                        thrust,
+                                        cur_quat,
+                                        computed_target_rpy,
+                                        target_rpy_rates
+                                        )
+
+        # Convert the current quaternion to Euler angles (roll, pitch, yaw)
         cur_rpy = p.getEulerFromQuaternion(cur_quat)
+
+        # Return the computed RPMs, position error, and yaw error
         return rpm, pos_e, computed_target_rpy[2] - cur_rpy[2]
+
     
     ################################################################################
 

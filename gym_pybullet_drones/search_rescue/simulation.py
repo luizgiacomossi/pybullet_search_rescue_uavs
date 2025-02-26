@@ -32,8 +32,8 @@ class Vehicle:
         self.index = index
         self.position = np.array(initial_position)
         self.orientation = np.array(initial_orientation)
-        self.target_position = np.array(initial_position)
-        self.target_orientation = np.array(initial_orientation)
+        self.target_position = self.position.copy()
+        self.target_orientation = self.orientation.copy()
         self.model_urdf = None
         self.action = np.zeros(4)
 
@@ -119,7 +119,7 @@ class Swarm:
 
     def create_drone(self, n_drones = 1):
         for i in range(n_drones):
-            pass
+            self.env._addDrone()
 
     def change_color_drones(self):
         # set a random color for the drones
@@ -150,8 +150,10 @@ class DroneSimulation:
         self.controllers = []
 
         self.action = np.zeros((self.num_drones + 1, 4))  # Extra drone for manual control
-        self.manual_drone_index = self.num_drones   # Index of the manual drone
-        self.manual_drone_max_velocity = 0.05
+        self.manual_drone = Drone(index = self.num_drones, 
+                                  initial_position=np.array([1, 1, 0.5]),
+                                  initial_orientation=np.array([0,0,0.1])
+                                 )
         self.manual_drone_rpy = np.array([0,0,0.1]) 
 
         self.swarm = Swarm()
@@ -197,8 +199,9 @@ class DroneSimulation:
         self.init_rpys = np.array([[0, 0, i * (np.pi / 2) / self.num_drones] for i in range(self.num_drones)])
 
         # Initial position of the manual drone
-        self.drone_manual_position = np.array([1, 1, 0.5]) 
-        self.init_xyzs = np.vstack((self.init_xyzs, self.drone_manual_position))
+        manual_ini_xyz = np.array([1, 1, 0.5])
+        self.manual_drone.set_position(manual_ini_xyz )
+        self.init_xyzs = np.vstack((self.init_xyzs, manual_ini_xyz))
 
     def init_trajectories(self):
         PERIOD = 10
@@ -263,6 +266,9 @@ class DroneSimulation:
         for step_num in range(num_steps):  # Iterate through each simulation step
             # Execute a step in the environment, applying the current action
             obs, _, _, _, _ = self.env.step(self.action)
+
+            # update manual drone internal position reference
+            self.manual_drone.position = obs[self.manual_drone.index][0:3]
 
             # Update drone controls based on the current observation from the environment
             self.update_controls(obs)
@@ -333,43 +339,57 @@ class DroneSimulation:
 
         # Update the control for the manual drone
 
-        self.action[self.manual_drone_index, :] = self.manual_controller.computeControlFromState(
+        target_position = self.manual_drone.target_position
+        target_rotation= self.manual_drone_rpy
+        
+        self.action[self.manual_drone.index, :] = self.manual_controller.computeControlFromState(
                                                     control_timestep=self.env.CTRL_TIMESTEP, # Control timestep
-                                                    state=obs[self.manual_drone_index], # Current state of the manual drone
-                                                    target_pos=self.drone_manual_position, # Target position for the manual drone
-                                                    target_rpy= self.manual_drone_rpy, # Target roll, pitch, yaw
+                                                    state=obs[self.manual_drone.index], # Current state of the manual drone
+                                                    target_pos=target_position, # Target position for the manual drone
+                                                    target_rpy= target_rotation, # Target roll, pitch, yaw
                                                 )[0]  # Extract the control action from the returned tuple
         #self.manual_drone_rpy[2]= self.manual_drone_rpy[2] + 0.1
 
         #print(f"Manual Drone desired Position: {self.drone_manual_position}, {obs[self.manual_drone_index][0:3]}")
         #print(f"Error: {np.linalg.norm(self.drone_manual_position - obs[self.manual_drone_index][0:3])}")
-        #print(f"Manual Drone Position: {obs[self.manual_drone_index][0:3]}")
+        #print(f"Manual Drone Position: {self.manual_drone.get_position()} ,  {target_position} ")
 
     def process_input(self):
         # get the value of the user debug parameter
-        try:
-            self.manual_drone_max_velocity = p.readUserDebugParameter(0)
-        except:
-            pass
+        #try:
+            #self.manual_drone_max_velocity = p.readUserDebugParameter(0)
+        #except:
+            #pass
         
-        step_size = self.manual_drone_max_velocity * 0.1
+        step_size = self.manual_drone.MAX_VELOCITY * 0.01
+        manual_drone_current_position =  self.manual_drone.target_position
 
         key_events = p.getKeyboardEvents()
         if p.B3G_LEFT_ARROW in key_events:
-            self.drone_manual_position[0] -= step_size
+            manual_drone_current_position[0] -= step_size
+            self.manual_drone.set_position(manual_drone_current_position)
         if p.B3G_RIGHT_ARROW in key_events:
-            self.drone_manual_position[0] += step_size
+            manual_drone_current_position[0] += step_size
+            self.manual_drone.set_position(manual_drone_current_position)
         if p.B3G_UP_ARROW in key_events:
-            self.drone_manual_position[1] += step_size
+            manual_drone_current_position[1] += step_size
+            self.manual_drone.set_position(manual_drone_current_position)
+
         if p.B3G_DOWN_ARROW in key_events:
-            self.drone_manual_position[1] -= step_size
+            manual_drone_current_position[1] -= step_size
+            self.manual_drone.set_position(manual_drone_current_position)
+
         if ord('u') in key_events:
-            self.drone_manual_position[2] += step_size
+            manual_drone_current_position[2] += step_size
+            self.manual_drone.set_position(manual_drone_current_position)
+
         if ord('d') in key_events:
-            self.drone_manual_position[2] -= step_size
+            manual_drone_current_position[2] -= step_size
+            self.manual_drone.set_position(manual_drone_current_position)
+
         if ord('r') in key_events:
             # reset the manual drone position
-            self.drone_manual_position = np.array([1, 1, 0.5])
+            self.manual_drone.set_position(np.array([1, 1, 0.5]))
         
         # if n is pressed and the camera is following a drone
         # only changes when released
@@ -380,6 +400,8 @@ class DroneSimulation:
             if self.camera_follow_drone >= self.num_drones + 1:
                 self.camera_follow_drone = 0
 
+        if ord('c') in key_events and key_events[ord('c')] == 4:
+            self.swarm.create_drone()
 
         # Handle mouse input
         mouse_events = p.getMouseEvents()
@@ -409,7 +431,6 @@ class DroneSimulation:
         rgb, dep, seg = self.env._getDroneImages(drone_id)
         # show the image in a separate OpenCV window
         plt.imshow(rgb)  # Displays the RGB image
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Control Drone using PID and arrow keys")

@@ -483,12 +483,15 @@ class BaseAviary(gym.Env):
         #### Load ground plane, drone and obstacles models #########
         self.PLANE_ID = p.loadURDF("plane.urdf", physicsClientId=self.CLIENT)
 
-        self.DRONE_IDS = np.array([p.loadURDF(pkg_resources.resource_filename('gym_pybullet_drones', 'assets/'+self.URDF),
-                                              self.INIT_XYZS[i,:],
-                                              p.getQuaternionFromEuler(self.INIT_RPYS[i,:]),
-                                              flags = p.URDF_USE_INERTIA_FROM_FILE,
-                                              physicsClientId=self.CLIENT
-                                              ) for i in range(self.NUM_DRONES)])
+        self.DRONE_IDS = np.array([
+                                    p.loadURDF(
+                                        pkg_resources.resource_filename('gym_pybullet_drones', 'assets/'+self.URDF),
+                                        self.INIT_XYZS[i,:],
+                                        p.getQuaternionFromEuler(self.INIT_RPYS[i,:]),
+                                        flags=p.URDF_USE_INERTIA_FROM_FILE,
+                                        physicsClientId=self.CLIENT
+                                    ) for i in range(self.NUM_DRONES)
+                                  ])
         # sets a random color for each drone
         #for i in range(self.NUM_DRONES):
         #    p.changeVisualShape(self.DRONE_IDS[i], -1, rgbaColor=[np.random.rand(), np.random.rand(), np.random.rand(), 1], physicsClientId=self.CLIENT)
@@ -518,11 +521,14 @@ class BaseAviary(gym.Env):
         and improve performance (at the expense of memory).
 
         """
-        for i in range (self.NUM_DRONES):
-            self.pos[i], self.quat[i] = p.getBasePositionAndOrientation(self.DRONE_IDS[i], physicsClientId=self.CLIENT)
-            self.rpy[i] = p.getEulerFromQuaternion(self.quat[i])
-            self.vel[i], self.ang_v[i] = p.getBaseVelocity(self.DRONE_IDS[i], physicsClientId=self.CLIENT)
-    
+        try:
+            for i in range (self.NUM_DRONES):
+                self.pos[i], self.quat[i] = p.getBasePositionAndOrientation(self.DRONE_IDS[i], physicsClientId=self.CLIENT)
+                self.rpy[i] = p.getEulerFromQuaternion(self.quat[i])
+                self.vel[i], self.ang_v[i] = p.getBaseVelocity(self.DRONE_IDS[i], physicsClientId=self.CLIENT)
+        except:
+            print('Error in _updateAndStoreKinematicInformation')
+
     ################################################################################
 
     def _startVideoRecording(self):
@@ -1150,3 +1156,15 @@ class BaseAviary(gym.Env):
             current_position + normalized_direction * step_size
         )  # Calculate the next step
         return next_step
+
+    def _addDrone(self):
+        new_drone_id = p.loadURDF(
+            pkg_resources.resource_filename('gym_pybullet_drones', 'assets/' + self.URDF),
+            [0,0,0.2],
+            p.getQuaternionFromEuler([0,0,0.2]),
+            flags=p.URDF_USE_INERTIA_FROM_FILE,
+            physicsClientId=self.CLIENT
+        )
+        
+        self.DRONE_IDS = np.append(self.DRONE_IDS, new_drone_id)
+        print(f'New drone created with ID {new_drone_id}')
